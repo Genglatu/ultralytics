@@ -59,6 +59,9 @@ from ultralytics.nn.modules import (
     WorldDetect,
     v10Detect,
     MBConv,
+    conv_bn_hswish,
+    MobileNet_Block,
+    SELayer,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
