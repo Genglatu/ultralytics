@@ -1092,7 +1092,7 @@ class Conv_Bn_Hswish(nn.Module):
         super(Conv_Bn_Hswish, self).__init__()
         self.conv = nn.Conv2d(c1, c2, 3, stride, 1, bias=False)
         self.bn = nn.BatchNorm2d(c2)
-        self.act = h_swish()
+        self.act = nn.Hardswish()
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
@@ -1114,7 +1114,7 @@ class MobileNet_Block(nn.Module):
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
                           bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Sequential(),
                 # pw-linear
@@ -1127,14 +1127,14 @@ class MobileNet_Block(nn.Module):
                 # pw
                 nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
                           bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Sequential(),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
                 # pw-linear
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
