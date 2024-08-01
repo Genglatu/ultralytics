@@ -55,7 +55,7 @@ __all__ = (
     "PSA",
     "SCDown",
     "MBConv",
-    "conv_bn_hswish",
+    "Conv_Bn_Hswish",
     "MobileNet_Block",
     "SELayer",
 )
@@ -1077,7 +1077,7 @@ class MBConv(nn.Module):
         return result
 
 # MobileNetv3-----------------------------------------------------------------------------------------------------------
-class conv_bn_hswish(nn.Module):
+class Conv_Bn_Hswish(nn.Module):
     """
     This equals to
     def conv_3x3_bn(inp, oup, stride):
@@ -1089,7 +1089,7 @@ class conv_bn_hswish(nn.Module):
     """
 
     def __init__(self, c1, c2, stride):
-        super(conv_bn_hswish, self).__init__()
+        super(Conv_Bn_Hswish, self).__init__()
         self.conv = nn.Conv2d(c1, c2, 3, stride, 1, bias=False)
         self.bn = nn.BatchNorm2d(c2)
         self.act = h_swish()
