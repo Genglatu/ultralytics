@@ -19,7 +19,7 @@ backbone:
     # hidden_ch表示在Inverted residuals中的扩张通道数
     # use_se 表示是否使用 SELayer, use_hs 表示使用 h_swish 还是 ReLU
   # [from, repeats, module, args]
-  - [-1, 1, conv_bn_hswish, [16, 2]]                 # 0-p1/2
+  - [-1, 1, Conv_Bn_Hswish, [16, 2]]                 # 0-p1/2
   - [-1, 1, MobileNet_Block, [16,  16, 3, 2, 1, 0]]  # 1-p2/4
   - [-1, 1, MobileNet_Block, [24,  72, 3, 2, 0, 0]]  # 2-p3/8
   - [-1, 1, MobileNet_Block, [24,  88, 3, 1, 0, 0]]  # 3-p3/8
