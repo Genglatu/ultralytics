@@ -1158,7 +1158,7 @@ class SELayer(nn.Module):
             nn.Linear(channel, channel // reduction),
             nn.ReLU(inplace=True),
             nn.Linear(channel // reduction, channel),
-            h_sigmoid()
+            nn.Hardsigmoid()
         )
 
     def forward(self, x):
