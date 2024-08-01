@@ -59,7 +59,7 @@ from ultralytics.nn.modules import (
     WorldDetect,
     v10Detect,
     MBConv,
-    conv_bn_hswish,
+    Conv_Bn_Hswish,
     MobileNet_Block,
     SELayer,
 )
@@ -1005,7 +1005,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
-        elif m in {conv_bn_hswish, MobileNet_Block}:
+        elif m in {Conv_Bn_Hswish, MobileNet_Block}:
             c1, c2 = ch[f], args[0]
             if c2 != nc:
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
