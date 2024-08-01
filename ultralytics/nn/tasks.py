@@ -7,6 +7,9 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
+from functools import partial
+from ultralytics.nn.modules.block import MBConvConfig
+
 from ultralytics.nn.modules import (
     AIFI,
     C1,
@@ -55,6 +58,7 @@ from ultralytics.nn.modules import (
     Segment,
     WorldDetect,
     v10Detect,
+    MBConv,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -66,13 +70,13 @@ from ultralytics.utils.loss import (
     v8PoseLoss,
     v8SegmentationLoss,
 )
-from ultralytics.utils.ops import make_divisible
 from ultralytics.utils.plotting import feature_visualization
 from ultralytics.utils.torch_utils import (
     fuse_conv_and_bn,
     fuse_deconv_and_bn,
     initialize_weights,
     intersect_dicts,
+    make_divisible,
     model_info,
     scale_img,
     time_sync,
@@ -276,7 +280,7 @@ class BaseModel(nn.Module):
             batch (dict): Batch to compute loss on
             preds (torch.Tensor | List[torch.Tensor]): Predictions.
         """
-        if getattr(self, "criterion", None) is None:
+        if not hasattr(self, "criterion"):
             self.criterion = self.init_criterion()
 
         preds = self.forward(batch["img"]) if preds is None else preds
@@ -337,7 +341,7 @@ class DetectionModel(BaseModel):
 
     def _predict_augment(self, x):
         """Perform augmentations on input image x and return augmented inference and train outputs."""
-        if getattr(self, "end2end", False):
+        if self.end2end:
             LOGGER.warning(
                 "WARNING ⚠️ End2End model does not support 'augment=True' prediction. "
                 "Reverting to single-scale prediction."
@@ -379,7 +383,7 @@ class DetectionModel(BaseModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
-        return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
+        return E2EDetectLoss(self) if self.end2end else v8DetectionLoss(self)
 
 
 class OBBModel(DetectionModel):
@@ -788,14 +792,14 @@ def torch_safe_load(weight):
                     f"with https://github.com/ultralytics/yolov5.\nThis model is NOT forwards compatible with "
                     f"YOLOv8 at https://github.com/ultralytics/ultralytics."
                     f"\nRecommend fixes are to train a new model using the latest 'ultralytics' package or to "
-                    f"run a command with an official Ultralytics model, i.e. 'yolo predict model=yolov8n.pt'"
+                    f"run a command with an official YOLOv8 model, i.e. 'yolo predict model=yolov8n.pt'"
                 )
             ) from e
         LOGGER.warning(
-            f"WARNING ⚠️ {weight} appears to require '{e.name}', which is not in Ultralytics requirements."
+            f"WARNING ⚠️ {weight} appears to require '{e.name}', which is not in ultralytics requirements."
             f"\nAutoInstall will run now for '{e.name}' but this feature will be removed in the future."
             f"\nRecommend fixes are to train a new model using the latest 'ultralytics' package or to "
-            f"run a command with an official Ultralytics model, i.e. 'yolo predict model=yolov8n.pt'"
+            f"run a command with an official YOLOv8 model, i.e. 'yolo predict model=yolov8n.pt'"
         )
         check_requirements(e.name)  # install missing module
         ckpt = torch.load(file, map_location="cpu")
@@ -953,6 +957,25 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if m in {BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB}:
                 args.insert(2, n)  # number of repeats
                 n = 1
+        elif m is MBConv:
+            stochastic_depth_prob = 0.2
+            expand_ratio = args[1]
+            kernel = args[2]
+            stride = args[3]
+            input_channels = ch[f]
+            out_channels = args[0]
+            num_layers = args[4]
+            stage_block_id = args[5]
+            total_stage_block = args[6]
+            bneck_conf = partial(MBConvConfig, width_mult=1, depth_mult=1)
+            
+            inverted_residual_setting = bneck_conf(expand_ratio,kernel,stride,input_channels,out_channels,num_layers)
+            
+            sd_prob = stochastic_depth_prob * float(stage_block_id)/total_stage_block
+            norm_layer = nn.BatchNorm2d            
+            c2 = out_channels
+
+            args = [inverted_residual_setting,sd_prob,norm_layer]
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in {HGStem, HGBlock}:
