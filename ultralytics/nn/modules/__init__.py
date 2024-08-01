@@ -54,7 +54,7 @@ from .block import (
     ResNetLayer,
     SCDown,
     MBConv,
-    conv_bn_hswish,
+    Conv_Bn_Hswish,
     MobileNet_Block,
     SELayer,
 )
@@ -155,7 +155,7 @@ __all__ = (
     "PSA",
     "SCDown",
     "MBConv",
-    "conv_bn_hswish",
+    "Conv_Bn_Hswish",
     "MobileNet_Block",
     "SELayer",
 )
