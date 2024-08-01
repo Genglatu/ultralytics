@@ -1088,7 +1088,7 @@ class Conv_Bn_Hswish(nn.Module):
         )
     """
 
-    def __init__(self, c1, c2, stride):
+    def __init__(self, c1, c2, stride=1):
         super(Conv_Bn_Hswish, self).__init__()
         self.conv = nn.Conv2d(c1, c2, 3, stride, 1, bias=False)
         self.bn = nn.BatchNorm2d(c2)
