@@ -1013,6 +1013,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if c2 != nc:
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
             args = [c1, c2, *args[1:]]
+        elif m in [Densenet121, Densenet169, Densenet201]:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:  # if not output
+                c2 = make_divisible(c2 * gw, 8)
+            args = [c1, c2, *args[1:]]
         else:
             c2 = ch[f]
 
