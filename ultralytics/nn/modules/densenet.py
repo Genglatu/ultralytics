@@ -16,7 +16,7 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers import BatchNormAct2d, create_norm_act_layer, BlurPool2d, create_classifier
 
 
-__all__ = ['DenseNet']
+__all__ = ['DenseNet','Densenet121', 'Densenet169', 'Densenet201']
 
 
 def _cfg(url=''):
