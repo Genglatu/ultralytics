@@ -62,6 +62,9 @@ from ultralytics.nn.modules import (
     Conv_Bn_Hswish,
     MobileNet_Block,
     SELayer,
+    Densenet121, 
+    Densenet169, 
+    Densenet201,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
