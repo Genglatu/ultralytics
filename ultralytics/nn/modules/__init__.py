@@ -87,6 +87,8 @@ from .transformer import (
     TransformerLayer,
 )
 
+from .densenet import Densenet121, Densenet169, Densenet201
+
 __all__ = (
     "Conv",
     "Conv2",
@@ -158,4 +160,7 @@ __all__ = (
     "Conv_Bn_Hswish",
     "MobileNet_Block",
     "SELayer",
+    "Densenet121", 
+    "Densenet169", 
+    "Densenet201",
 )
