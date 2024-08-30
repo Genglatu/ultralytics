@@ -79,6 +79,8 @@ dependencies = [
     "pandas>=1.1.4",
     "seaborn>=0.11.0", # plotting
     "ultralytics-thop>=2.0.0", # FLOPs computation https://github.com/ultralytics/thop
+    "einops>=0.7.0", #Rearrange
+    "timm>=0.9.12",
 ]
 
 # Optional dependencies ------------------------------------------------------------------------------------------------
@@ -122,8 +124,6 @@ extra = [
     "ipython", # interactive notebook
     "albumentations>=1.4.6", # training augmentations
     "pycocotools>=2.0.7", # COCO mAP
-    "einops>=0.7.0", #Rearrange
-    "timm>=0.9.12",
 ]
 
 [project.urls]
