@@ -63,6 +63,19 @@ from ultralytics.nn.modules import (
     MobileNet_Block,
     SELayer,
 )
+
+from ultralytics.nn.backbone.swinTransformer import PatchEmbed,PatchMerging,SwinStage
+from ultralytics.nn.backbone.VanillaNet import VanillaBlock
+from ultralytics.nn.backbone.ShuffleNetv2 import CBRM, Shuffle_Block
+from ultralytics.nn.backbone.GhostV2 import GhostV2
+from ultralytics.nn.backbone.MobileVit import MV2Block, MobileViTBlock
+from ultralytics.nn.backbone.fasternet import BasicStage, PatchEmbed_FasterNet, PatchMerging_FasterNet
+from ultralytics.nn.backbone.EfficientNet import stem, MBConvBlock
+from ultralytics.nn.backbone.ConvNext import ConvNeXt_Stem, ConvNeXt_Block, ConvNeXt_Downsample
+from ultralytics.nn.backbone.MobileNetV3 import Conv_BN_HSwish, MobileNetV3_InvertedResidual
+from ultralytics.nn.backbone.PP_LCNet import DepthSepConv
+from ultralytics.nn.backbone.MobileNext import SGBlock
+
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import (
