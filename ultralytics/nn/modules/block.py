@@ -1156,8 +1156,6 @@ class MBConvConfig(_MBConvConfig):
         self.out_channels = self.adjust_channels(out_channels, width_mult)     
         self.num_layers = self.adjust_depth(num_layers, depth_mult)            
         self.block = block if block is not None else MBConv    
-        
-        super().__init__(expand_ratio, kernel, stride, input_channels, out_channels, num_layers, block)
 
     @staticmethod
     def adjust_depth(num_layers: int, depth_mult: float):
