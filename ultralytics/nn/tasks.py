@@ -10,6 +10,9 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
+from functools import partial
+from ultralytics.nn.modules.block import MBConvConfig
+
 from ultralytics.nn.modules import (
     AIFI,
     C1,
