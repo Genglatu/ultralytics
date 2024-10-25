@@ -61,7 +61,24 @@ from ultralytics.nn.modules import (
     Segment,
     WorldDetect,
     v10Detect,
+    MBConv,
+    Conv_Bn_Hswish,
+    MobileNet_Block,
+    SELayer,
 )
+
+from ultralytics.nn.backbone.swinTransformer import PatchEmbed,PatchMerging,SwinStage
+from ultralytics.nn.backbone.VanillaNet import VanillaBlock
+from ultralytics.nn.backbone.ShuffleNetv2 import CBRM, Shuffle_Block
+from ultralytics.nn.backbone.GhostV2 import GhostV2
+from ultralytics.nn.backbone.MobileVit import MV2Block, MobileViTBlock
+from ultralytics.nn.backbone.fasternet import BasicStage, PatchEmbed_FasterNet, PatchMerging_FasterNet
+from ultralytics.nn.backbone.EfficientNet import stem, MBConvBlock
+from ultralytics.nn.backbone.ConvNext import ConvNeXt_Stem, ConvNeXt_Block, ConvNeXt_Downsample
+from ultralytics.nn.backbone.MobileNetV3 import Conv_BN_HSwish, MobileNetV3_InvertedResidual
+from ultralytics.nn.backbone.PP_LCNet import DepthSepConv
+from ultralytics.nn.backbone.MobileNext import SGBlock
+
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import (
@@ -999,6 +1016,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PSA,
             SCDown,
             C2fCIB,
+            BasicStage, 
+            PatchEmbed_FasterNet, 
+            PatchMerging_FasterNet,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1032,6 +1052,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 legacy = False
                 if scale in "mlx":
                     args[3] = True
+            if m in [BasicStage]:
+                args.pop(1)
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in {HGStem, HGBlock}:
@@ -1060,6 +1082,98 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
+        elif m is MBConv:
+            stochastic_depth_prob = 0.2
+            expand_ratio = args[1]
+            kernel = args[2]
+            stride = args[3]
+            input_channels = ch[f]
+            out_channels = args[0]
+            num_layers = args[4]
+            stage_block_id = args[5]
+            total_stage_block = args[6]
+            bneck_conf = partial(MBConvConfig, width_mult=1, depth_mult=1)
+            
+            inverted_residual_setting = bneck_conf(expand_ratio,kernel,stride,input_channels,out_channels,num_layers)
+            
+            sd_prob = stochastic_depth_prob * float(stage_block_id)/total_stage_block
+            norm_layer = nn.BatchNorm2d            
+            c2 = out_channels
+
+            args = [inverted_residual_setting,sd_prob,norm_layer]
+            
+        elif m in {Conv_Bn_Hswish, MobileNet_Block}:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+                ###########   begin  这里是 ” 拆解 “ 式 的 更换主干网络 ############
+        elif m in [PatchMerging, PatchEmbed, SwinStage]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m is VanillaBlock:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m in [CBRM, Shuffle_Block]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m is GhostV2:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m is MV2Block:
+            c1, c2 = ch[f], args[0]
+            args = [c1, c2, *args[1:]]
+        elif m is MobileViTBlock:
+            dim, depth, d_c = args[0], args[1], ch[f]
+            if d_c != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                d_c = make_divisible(min(d_c, max_channels) * width, 8)
+            args = [dim, depth, d_c, *args[2:]]
+
+        elif m in [stem, MBConvBlock]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m in (ConvNeXt_Stem, ConvNeXt_Block, ConvNeXt_Downsample):
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+            if m is ConvNeXt_Block:
+                args.insert(2, n)  # number of repeats
+                n = 1
+
+        elif m is DepthSepConv:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m in [Conv_BN_HSwish, MobileNetV3_InvertedResidual]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+
+        elif m is SGBlock:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
         else:
             c2 = ch[f]
 
