@@ -172,13 +172,12 @@ class DenseNet(nn.Module):
           but slower. Default: *False*. See `"paper" <https://arxiv.org/pdf/1707.06990.pdf>`_
     """
 
-    def __init__(self, idx=0, layer_name="", growth_rate=32, block_config=(6, 12, 24, 16), cout=64, **kwargs):
+    def __init__(self, idx=0, layer_name="", growth_rate=32, block_config=(6, 12, 24, 16), cout=64, bn_size=4, **kwargs):
         super(DenseNet, self).__init__()
         self.layer_name = layer_name
         self.idx = idx
-        self.cout = cout  # output channels aligned with YOLO layers
-        
-        # Initial layers (stem)
+        self.cout = cout
+
         num_init_features = growth_rate * 2
         self.features = nn.Sequential(OrderedDict([
             ('conv0', nn.Conv2d(kwargs.get('in_chans', 3), num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
@@ -186,21 +185,24 @@ class DenseNet(nn.Module):
             ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
         ]))
         
-        # Dense blocks with transitions
         num_features = num_init_features
         self.densenet_layer = nn.ModuleList()
         self.densenet_transition_layer = nn.ModuleList()
 
         for i, num_layers in enumerate(block_config):
-            block = DenseBlock(num_layers=num_layers, num_input_features=num_features, growth_rate=growth_rate)
+            block = DenseBlock(
+                num_layers=num_layers,
+                num_input_features=num_features,
+                growth_rate=growth_rate,
+                bn_size=bn_size  # Add bn_size here
+            )
             self.densenet_layer.append(block)
-            num_features = num_features + num_layers * growth_rate
+            num_features += num_layers * growth_rate
             if i != len(block_config) - 1:
                 trans = DenseTransition(num_input_features=num_features, num_output_features=num_features // 2)
                 self.densenet_transition_layer.append(trans)
-                num_features = num_features // 2
+                num_features //= 2
 
-        # Final norm layer
         self.features.add_module('norm5', BatchNormAct2d(num_features))
         self.num_features = num_features
 
