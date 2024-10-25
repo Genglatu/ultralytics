@@ -10,6 +10,15 @@ from ultralytics.utils.torch_utils import fuse_conv_and_bn
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
 from .transformer import TransformerBlock
 
+from typing import Callable, Optional, List
+from dataclasses import dataclass
+from torchvision.models._utils import _make_divisible
+import math
+from torchvision.ops.misc import Conv2dNormActivation, SqueezeExcitation
+from torchvision.ops import StochasticDepth
+from functools import partial
+
+
 __all__ = (
     "DFL",
     "HGBlock",
@@ -49,6 +58,10 @@ __all__ = (
     "Attention",
     "PSA",
     "SCDown",
+    "MBConv",
+    "Conv_Bn_Hswish",
+    "MobileNet_Block",
+    "SELayer",
 )
 
 
@@ -1106,3 +1119,201 @@ class SCDown(nn.Module):
     def forward(self, x):
         """Applies convolution and downsampling to the input tensor in the SCDown module."""
         return self.cv2(self.cv1(x))
+
+class _MBConvConfig:
+    expand_ratio: float
+    kernel: int 
+    stride: int
+    input_channels: int 
+    out_channels: int
+    num_layers: int
+    block: Callable[..., nn.Module]
+
+    @staticmethod
+    def adjust_channels(channels: int, width_mult: float, min_value: Optional[int] = None) -> int:
+        return _make_divisible(channels * width_mult, 8, min_value)
+
+
+class MBConvConfig(_MBConvConfig):
+    # Stores information listed at Table 1 of the EfficientNet paper & Table 4 of the EfficientNetV2 paper
+    def __init__(
+        self,
+        expand_ratio: float,
+        kernel: int,
+        stride: int,
+        input_channels: int,
+        out_channels: int,
+        num_layers: int,
+        width_mult: float = 1.0,
+        depth_mult: float = 1.0,
+        block: Optional[Callable[..., nn.Module]] = None,
+    ) -> None:
+        
+        input_channels = self.adjust_channels(input_channels, width_mult)
+        out_channels = self.adjust_channels(out_channels, width_mult)
+        num_layers = self.adjust_depth(num_layers, depth_mult)
+        if block is None:
+            block = MBConv
+        super().__init__(expand_ratio, kernel, stride, input_channels, out_channels, num_layers, block)
+
+    @staticmethod
+    def adjust_depth(num_layers: int, depth_mult: float):
+        return int(math.ceil(num_layers * depth_mult))
+
+class MBConv(nn.Module):
+    def __init__(
+        self,
+        cnf: MBConvConfig,
+        stochastic_depth_prob: float,
+        norm_layer: Callable[..., nn.Module],
+        se_layer: Callable[..., nn.Module] = SqueezeExcitation,
+    ) -> None:
+        super().__init__()
+
+        if not (1 <= cnf.stride <= 2):
+            raise ValueError("illegal stride value")
+
+        self.use_res_connect = cnf.stride == 1 and cnf.input_channels == cnf.out_channels
+
+        layers: List[nn.Module] = []
+        activation_layer = nn.SiLU
+
+        # expand
+        expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
+        if expanded_channels != cnf.input_channels:
+            layers.append(
+                Conv2dNormActivation(
+                    cnf.input_channels,
+                    expanded_channels,
+                    kernel_size=1,
+                    norm_layer=norm_layer,
+                    activation_layer=activation_layer,
+                )
+            )
+
+        # depthwise
+        layers.append(
+            Conv2dNormActivation(
+                expanded_channels,
+                expanded_channels,
+                kernel_size=cnf.kernel,
+                stride=cnf.stride,
+                groups=expanded_channels,
+                norm_layer=norm_layer,
+                activation_layer=activation_layer,
+            )
+        )
+
+        # squeeze and excitation
+        squeeze_channels = max(1, cnf.input_channels // 4)
+        layers.append(se_layer(expanded_channels, squeeze_channels, activation=partial(nn.SiLU, inplace=True)))
+
+        # project
+        layers.append(
+            Conv2dNormActivation(
+                expanded_channels, cnf.out_channels, kernel_size=1, norm_layer=norm_layer, activation_layer=None
+            )
+        )
+
+        self.block = nn.Sequential(*layers)
+        self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
+        self.out_channels = cnf.out_channels
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        result = self.block(input)
+        if self.use_res_connect:
+            result = self.stochastic_depth(result)
+            result += input
+        return result
+
+# MobileNetv3-----------------------------------------------------------------------------------------------------------
+class Conv_Bn_Hswish(nn.Module):
+    """
+    This equals to
+    def conv_3x3_bn(inp, oup, stride):
+        return nn.Sequential(
+            nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+            nn.BatchNorm2d(oup),
+            h_swish()
+        )
+    """
+
+    def __init__(self, c1, c2, stride=1):
+        super(Conv_Bn_Hswish, self).__init__()
+        self.conv = nn.Conv2d(c1, c2, 3, stride, 1, bias=False)
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.Hardswish()
+
+    def forward(self, x):
+        return self.act(self.bn(self.conv(x)))
+
+    def fuseforward(self, x):
+        return self.act(self.conv(x))
+
+
+class MobileNet_Block(nn.Module):
+    def __init__(self, inp, oup, hidden_dim, kernel_size, stride, use_se, use_hs=False):
+        super(MobileNet_Block, self).__init__()
+        assert stride in [1, 2]
+
+        self.identity = stride == 1 and inp == oup
+
+        if inp == hidden_dim:
+            self.conv = nn.Sequential(
+                # dw
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
+                          bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
+                # Squeeze-and-Excite
+                SELayer(hidden_dim) if use_se else nn.Sequential(),
+                # pw-linear
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+            )
+        else:
+
+            self.conv = nn.Sequential(
+                # pw
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
+                # dw
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim,
+                          bias=False),
+                nn.BatchNorm2d(hidden_dim),
+                # Squeeze-and-Excite
+                SELayer(hidden_dim) if use_se else nn.Sequential(),
+                nn.Hardswish() if use_hs else nn.ReLU(inplace=True),
+                # pw-linear
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+            )
+
+    def forward(self, x):
+        y = self.conv(x)
+        if self.identity:
+            return x + y
+        else:
+            return y
+
+
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=4):
+        super(SELayer, self).__init__()
+        # Squeeze
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # Excitation(FC+ReLU+FC+Sigmoid)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel),
+            nn.Hardsigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x)
+        y = y.view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y
