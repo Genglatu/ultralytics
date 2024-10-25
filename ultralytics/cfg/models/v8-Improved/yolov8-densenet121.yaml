@@ -13,15 +13,15 @@ scales:  # model compound scaling constants
 # DenseNet-based YOLOv8 backbone
 backbone:
   # [from, repeats, module, args]
-  - [-1, 1, Densenet121, [64, 0, "densenet_input"]]  # Input layer
-  - [-1, 1, Densenet121, [256, 0, "densenet_layer"]]  # P2/4
-  - [-1, 1, Densenet121, [128, 0, "densenet_transition_layer"]]
-  - [-1, 1, Densenet121, [512, 1, "densenet_layer"]]  # P3/8
-  - [-1, 1, Densenet121, [256, 1, "densenet_transition_layer"]]
-  - [-1, 1, Densenet121, [1024, 2, "densenet_layer"]]  # P4/16
-  - [-1, 1, Densenet121, [512, 2, "densenet_transition_layer"]]
-  - [-1, 1, Densenet121, [1024, 3, "densenet_layer"]]  # P5/32
-  - [-1, 1, SPPF, [1024, 5]]  # Spatial Pyramid Pooling layer
+  - [-1, 1, Densenet121, [64, 0, "densenet_input"]]  # Initial layer
+  - [-1, 1, Densenet121, [256, 0, "densenet_layer"]]  # P2 output
+  - [-1, 1, Densenet121, [128, 0, "densenet_transition_layer"]] # P2 to P3 transition
+  - [-1, 1, Densenet121, [512, 1, "densenet_layer"]]  # P3 output
+  - [-1, 1, Densenet121, [256, 1, "densenet_transition_layer"]]  # P3 to P4 transition
+  - [-1, 1, Densenet121, [1024, 2, "densenet_layer"]]  # P4 output
+  - [-1, 1, Densenet121, [512, 2, "densenet_transition_layer"]]  # P4 to P5 transition
+  - [-1, 1, Densenet121, [1024, 3, "densenet_layer"]]  # P5 output
+  - [-1, 1, SPPF, [1024, 5]]  # Spatial Pyramid Pooling
 
 # YOLOv8 head with DenseNet
 head:
