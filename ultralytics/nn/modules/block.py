@@ -1149,11 +1149,14 @@ class MBConvConfig(_MBConvConfig):
         block: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
         
-        input_channels = self.adjust_channels(input_channels, width_mult)
-        out_channels = self.adjust_channels(out_channels, width_mult)
-        num_layers = self.adjust_depth(num_layers, depth_mult)
-        if block is None:
-            block = MBConv
+        self.expand_ratio = expand_ratio
+        self.kernel = kernel
+        self.stride = stride
+        self.input_channels = self.adjust_channels(input_channels, width_mult)  
+        self.out_channels = self.adjust_channels(out_channels, width_mult)     
+        self.num_layers = self.adjust_depth(num_layers, depth_mult)            
+        self.block = block if block is not None else MBConv    
+        
         super().__init__(expand_ratio, kernel, stride, input_channels, out_channels, num_layers, block)
 
     @staticmethod
