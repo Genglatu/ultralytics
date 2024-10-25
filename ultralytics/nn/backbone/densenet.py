@@ -172,154 +172,48 @@ class DenseNet(nn.Module):
           but slower. Default: *False*. See `"paper" <https://arxiv.org/pdf/1707.06990.pdf>`_
     """
 
-    def __init__(
-            self, idx = 0,layer_name = "", growth_rate=32, block_config=(6, 12, 24, 16), num_classes=1000, in_chans=3, global_pool='avg',
-            bn_size=4, stem_type='', norm_layer=BatchNormAct2d, aa_layer=None, drop_rate=0,
-            memory_efficient=False, aa_stem_only=True):
-        self.num_classes = num_classes
-        self.layer_name = layer_name
-        self.drop_rate = drop_rate
-        self.idx = idx
+    def __init__(self, idx=0, layer_name="", growth_rate=32, block_config=(6, 12, 24, 16), cout=64, **kwargs):
         super(DenseNet, self).__init__()
-
-        # Stem
-        deep_stem = 'deep' in stem_type  # 3x3 deep stem
+        self.layer_name = layer_name
+        self.idx = idx
+        self.cout = cout  # output channels aligned with YOLO layers
+        
+        # Initial layers (stem)
         num_init_features = growth_rate * 2
-
-        if aa_layer is None:
-            stem_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        else:
-            stem_pool = nn.Sequential(*[
-                nn.MaxPool2d(kernel_size=3, stride=1, padding=1),
-                aa_layer(channels=num_init_features, stride=2)])
-        if deep_stem:
-            stem_chs_1 = stem_chs_2 = growth_rate
-            if 'tiered' in stem_type:
-                stem_chs_1 = 3 * (growth_rate // 4)
-                stem_chs_2 = num_init_features if 'narrow' in stem_type else 6 * (growth_rate // 4)
-            self.features = nn.Sequential(OrderedDict([
-                ('conv0', nn.Conv2d(in_chans, stem_chs_1, 3, stride=2, padding=1, bias=False)),
-                ('norm0', norm_layer(stem_chs_1)),
-                ('conv1', nn.Conv2d(stem_chs_1, stem_chs_2, 3, stride=1, padding=1, bias=False)),
-                ('norm1', norm_layer(stem_chs_2)),
-                ('conv2', nn.Conv2d(stem_chs_2, num_init_features, 3, stride=1, padding=1, bias=False)),
-                ('norm2', norm_layer(num_init_features)),
-                ('pool0', stem_pool),
-            ]))
-        else:
-            self.features = nn.Sequential(OrderedDict([
-                ('conv0', nn.Conv2d(in_chans, num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
-                ('norm0', norm_layer(num_init_features)),
-                ('pool0', stem_pool),
-            ]))
-
-            ####
-            if self.layer_name == "densenet_input":
-                self.densenet_input = nn.Sequential(OrderedDict([
-                    ('conv0', nn.Conv2d(in_chans, num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
-                    ('norm0', norm_layer(num_init_features)),
-                    ('pool0', stem_pool),
-                ]))  #1
-
-            self.densenet_layer = [nn.Sequential(),nn.Sequential(),nn.Sequential(),nn.Sequential()]  #4
-            self.densenet_transition_layer = [nn.Sequential(), nn.Sequential(), nn.Sequential()]  #3
-        self.feature_info = [
-            dict(num_chs=num_init_features, reduction=2, module=f'features.norm{2 if deep_stem else 0}')]
-        current_stride = 4
-
-        # DenseBlocks
+        self.features = nn.Sequential(OrderedDict([
+            ('conv0', nn.Conv2d(kwargs.get('in_chans', 3), num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
+            ('norm0', BatchNormAct2d(num_init_features)),
+            ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+        ]))
+        
+        # Dense blocks with transitions
         num_features = num_init_features
+        self.densenet_layer = nn.ModuleList()
+        self.densenet_transition_layer = nn.ModuleList()
 
         for i, num_layers in enumerate(block_config):
-            block = DenseBlock(
-                num_layers=num_layers,
-                num_input_features=num_features,
-                bn_size=bn_size,
-                growth_rate=growth_rate,
-                norm_layer=norm_layer,
-                drop_rate=drop_rate,
-                memory_efficient=memory_efficient
-            )
-            module_name = f'denseblock{(i + 1)}'
-            self.features.add_module(module_name, block)
-
-            self.densenet_layer[i].add_module(module_name, block)
+            block = DenseBlock(num_layers=num_layers, num_input_features=num_features, growth_rate=growth_rate)
+            self.densenet_layer.append(block)
             num_features = num_features + num_layers * growth_rate
-            transition_aa_layer = None if aa_stem_only else aa_layer
             if i != len(block_config) - 1:
-                self.feature_info += [
-                    dict(num_chs=num_features, reduction=current_stride, module='features.' + module_name)]
-                current_stride *= 2
-                trans = DenseTransition(
-                    num_input_features=num_features, num_output_features=num_features // 2,  #256  128
-                    norm_layer=norm_layer, aa_layer=transition_aa_layer)
-                self.features.add_module(f'transition{i + 1}', trans)
-                self.densenet_transition_layer[i].add_module(f'transition{i + 1}', trans)
+                trans = DenseTransition(num_input_features=num_features, num_output_features=num_features // 2)
+                self.densenet_transition_layer.append(trans)
                 num_features = num_features // 2
 
-
-        # Final batch norm
-        self.features.add_module('norm5', norm_layer(num_features))
-        # if i == 3:
-        #     self.densenet_layer[3].add_module('norm5', norm_layer(num_features))
-
-        self.feature_info += [dict(num_chs=num_features, reduction=current_stride, module='features.norm5')]
+        # Final norm layer
+        self.features.add_module('norm5', BatchNormAct2d(num_features))
         self.num_features = num_features
 
-        # Linear layer
-        self.global_pool, self.classifier = create_classifier(
-            self.num_features, self.num_classes, pool_type=global_pool)
-
-        # Official init from torch repo.
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.constant_(m.bias, 0)
-
-    def get_classifier(self):
-        return self.classifier
-
-    def reset_classifier(self, num_classes, global_pool='avg'):
-        self.num_classes = num_classes
-        self.global_pool, self.classifier = create_classifier(
-            self.num_features, self.num_classes, pool_type=global_pool)
-
-    def forward_features(self, x):
-        return self.features(x)
-
     def forward(self, x):
+        x = self.features(x)
         if self.layer_name == "densenet_input":
-            x = self.densenet_input(x)
             return x
-        elif self.layer_name == "densenet_layer":
-            x = self.densenet_layer[self.idx](x)
+        x = self.densenet_layer[self.idx](x)
+        if self.layer_name == "densenet_layer":
             return x
-        elif self.layer_name == "densenet_transition_layer":
-            x = self.densenet_transition_layer[self.idx](x)
-            return x
-        else:
-            x = self.densenet_input(x)
-            x = self.densenet_layer[0](x)
-            x = self.densenet_transition_layer[0](x)
-            x = self.densenet_layer[1](x)
-            x = self.densenet_transition_layer[1](x)
-            x = self.densenet_layer[2](x)
-            x = self.densenet_transition_layer[3](x)
-            x = self.densenet_layer[3](x)
-            return x
-        # x = self.forward_features(x)
-        # x = self.global_pool(x)
-        # both classifier and block drop?
-        # if self.drop_rate > 0.:
-        #     x = F.dropout(x, p=self.drop_rate, training=self.training)
-        # x = self.classifier(x)
-
-
-
+        x = self.densenet_transition_layer[self.idx](x)
+        return x
+        
 class Densenet121(nn.Module):
     """Constructs a Res2Net-50  model."""
 
