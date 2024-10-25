@@ -81,6 +81,7 @@ from ultralytics.nn.backbone.ConvNext import ConvNeXt_Stem, ConvNeXt_Block, Conv
 from ultralytics.nn.backbone.MobileNetV3 import Conv_BN_HSwish, MobileNetV3_InvertedResidual
 from ultralytics.nn.backbone.PP_LCNet import DepthSepConv
 from ultralytics.nn.backbone.MobileNext import SGBlock
+from ultralytics.nn.backbone.densenet import Densenet121, Densenet169, Densenet201
 
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1022,6 +1023,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             BasicStage, 
             PatchEmbed_FasterNet, 
             PatchMerging_FasterNet,
+            Densenet121, 
+            Densenet169, 
+            Densenet201,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
