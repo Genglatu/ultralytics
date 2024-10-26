@@ -44,305 +44,103 @@ default_cfgs = {
 
 
 class DenseLayer(nn.Module):
-    def __init__(
-            self, num_input_features, growth_rate, bn_size, norm_layer=BatchNormAct2d,
-            drop_rate=0., memory_efficient=False):
+    def __init__(self, num_input_features, growth_rate, bn_size, norm_layer=BatchNormAct2d):
         super(DenseLayer, self).__init__()
-        self.add_module('norm1', norm_layer(num_input_features)),
-        self.add_module('conv1', nn.Conv2d(
-            num_input_features, bn_size * growth_rate, kernel_size=1, stride=1, bias=False)),
-        self.add_module('norm2', norm_layer(bn_size * growth_rate)),
-        self.add_module('conv2', nn.Conv2d(
-            bn_size * growth_rate, growth_rate, kernel_size=3, stride=1, padding=1, bias=False)),
-        self.drop_rate = float(drop_rate)
-        self.memory_efficient = memory_efficient
+        self.add_module('norm1', norm_layer(num_input_features))
+        self.add_module('conv1', nn.Conv2d(num_input_features, bn_size * growth_rate, kernel_size=1, stride=1, bias=False))
+        self.add_module('norm2', norm_layer(bn_size * growth_rate))
+        self.add_module('conv2', nn.Conv2d(bn_size * growth_rate, growth_rate, kernel_size=3, stride=1, padding=1, bias=False))
 
-    def bottleneck_fn(self, xs):
-        # type: (List[torch.Tensor]) -> torch.Tensor
-        concated_features = torch.cat(xs, 1)
-        bottleneck_output = self.conv1(self.norm1(concated_features))  # noqa: T484
-        return bottleneck_output
-
-    # todo: rewrite when torchscript supports any
-    def any_requires_grad(self, x):
-        # type: (List[torch.Tensor]) -> bool
-        for tensor in x:
-            if tensor.requires_grad:
-                return True
-        return False
-
-    @torch.jit.unused  # noqa: T484
-    def call_checkpoint_bottleneck(self, x):
-        # type: (List[torch.Tensor]) -> torch.Tensor
-        def closure(*xs):
-            return self.bottleneck_fn(xs)
-
-        return cp.checkpoint(closure, *x)
-
-    @torch.jit._overload_method  # noqa: F811
     def forward(self, x):
-        # type: (List[torch.Tensor]) -> (torch.Tensor)
-        pass
-
-    @torch.jit._overload_method  # noqa: F811
-    def forward(self, x):
-        # type: (torch.Tensor) -> (torch.Tensor)
-        pass
-
-    # torchscript does not yet support *args, so we overload method
-    # allowing it to take either a List[Tensor] or single Tensor
-    def forward(self, x):  # noqa: F811
-        if isinstance(x, torch.Tensor):
-            prev_features = [x]
-        else:
-            prev_features = x
-
-        if self.memory_efficient and self.any_requires_grad(prev_features):
-            if torch.jit.is_scripting():
-                raise Exception("Memory Efficient not supported in JIT")
-            bottleneck_output = self.call_checkpoint_bottleneck(prev_features)
-        else:
-            bottleneck_output = self.bottleneck_fn(prev_features)
-
-        new_features = self.conv2(self.norm2(bottleneck_output))
-        if self.drop_rate > 0:
-            new_features = F.dropout(new_features, p=self.drop_rate, training=self.training)
-        return new_features
+        new_features = self.conv1(self.norm1(x))
+        new_features = self.conv2(self.norm2(new_features))
+        return torch.cat([x, new_features], 1)
 
 
-class DenseBlock(nn.ModuleDict):
-    _version = 2
-
-    def __init__(
-            self, num_layers, num_input_features, bn_size, growth_rate, norm_layer=nn.ReLU,
-            drop_rate=0., memory_efficient=False):
+class DenseBlock(nn.Module):
+    def __init__(self, num_layers, num_input_features, bn_size, growth_rate, norm_layer=BatchNormAct2d):
         super(DenseBlock, self).__init__()
-        for i in range(num_layers):
-            layer = DenseLayer(
-                num_input_features + i * growth_rate,
-                growth_rate=growth_rate,
-                bn_size=bn_size,
-                norm_layer=norm_layer,
-                drop_rate=drop_rate,
-                memory_efficient=memory_efficient,
-            )
-            self.add_module('denselayer%d' % (i + 1), layer)
+        self.layer = nn.ModuleList([
+            DenseLayer(num_input_features + i * growth_rate, growth_rate, bn_size, norm_layer=norm_layer)
+            for i in range(num_layers)
+        ])
 
-    def forward(self, init_features):
-        features = [init_features]
-        for name, layer in self.items():
-            new_features = layer(features)
-            features.append(new_features)
-        return torch.cat(features, 1)
-
+    def forward(self, x):
+        for layer in self.layer:
+            x = layer(x)
+        return x
 
 class DenseTransition(nn.Sequential):
-    def __init__(self, num_input_features, num_output_features, norm_layer=nn.BatchNorm2d, aa_layer=None):
+    def __init__(self, num_input_features, num_output_features, norm_layer=BatchNormAct2d):
         super(DenseTransition, self).__init__()
         self.add_module('norm', norm_layer(num_input_features))
-        self.add_module('conv', nn.Conv2d(
-            num_input_features, num_output_features, kernel_size=1, stride=1, bias=False))
-        if aa_layer is not None:
-            self.add_module('pool', aa_layer(num_output_features, stride=2))
-        else:
-            self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
-
-
-'''
-██╗   ██╗ ██████╗ ██╗      ██████╗      █████╗     ██╗    ██████╗ 
-╚██╗ ██╔╝██╔═══██╗██║     ██╔═══██╗    ██╔══██╗    ██║    ██╔══██╗
- ╚████╔╝ ██║   ██║██║     ██║   ██║    ███████║    ██║    ██████╔╝
-  ╚██╔╝  ██║   ██║██║     ██║   ██║    ██╔══██║    ██║    ██╔══██╗
-   ██║   ╚██████╔╝███████╗╚██████╔╝    ██║  ██║    ██║    ██║  ██║
-   ╚═╝    ╚═════╝ ╚══════╝ ╚═════╝     ╚═╝  ╚═╝    ╚═╝    ╚═╝  ╚═╝
-'''
+        self.add_module('conv', nn.Conv2d(num_input_features, num_output_features, kernel_size=1, stride=1, bias=False))
+        self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
 class DenseNet(nn.Module):
-    r"""Densenet-BC model class, based on
-    `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
-
-    Args:
-        growth_rate (int) - how many filters to add each layer (`k` in paper)
-        block_config (list of 4 ints) - how many layers in each pooling block
-        bn_size (int) - multiplicative factor for number of bottle neck layers
-          (i.e. bn_size * k features in the bottleneck layer)
-        drop_rate (float) - dropout rate after each dense layer
-        num_classes (int) - number of classification classes
-        memory_efficient (bool) - If True, uses checkpointing. Much more memory efficient,
-          but slower. Default: *False*. See `"paper" <https://arxiv.org/pdf/1707.06990.pdf>`_
-    """
-
-    def __init__(self, idx=0, layer_name="", growth_rate=32, block_config=(6, 12, 24, 16), cout=64, bn_size=4, **kwargs):
+    def __init__(self, layer_name="", idx=0, growth_rate=32, block_config=(6, 12, 24, 16), bn_size=4, num_classes=1000, in_chans=3):
         super(DenseNet, self).__init__()
         self.layer_name = layer_name
         self.idx = idx
-        self.cout = cout
 
+        # Initial convolution
         num_init_features = growth_rate * 2
         self.features = nn.Sequential(OrderedDict([
-            ('conv0', nn.Conv2d(kwargs.get('in_chans', 3), num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
+            ('conv0', nn.Conv2d(in_chans, num_init_features, kernel_size=7, stride=2, padding=3, bias=False)),
             ('norm0', BatchNormAct2d(num_init_features)),
             ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
         ]))
-        
+
+        # Dense blocks and transition layers
         num_features = num_init_features
-        self.densenet_layer = nn.ModuleList()
-        self.densenet_transition_layer = nn.ModuleList()
+        self.dense_blocks = nn.ModuleList()
+        self.transition_layers = nn.ModuleList()
 
         for i, num_layers in enumerate(block_config):
-            block = DenseBlock(
-                num_layers=num_layers,
-                num_input_features=num_features,
-                growth_rate=growth_rate,
-                bn_size=bn_size  # Add bn_size here
-            )
-            self.densenet_layer.append(block)
-            num_features += num_layers * growth_rate
+            block = DenseBlock(num_layers=num_layers, num_input_features=num_features, growth_rate=growth_rate, bn_size=bn_size)
+            self.dense_blocks.append(block)
+            num_features = num_features + num_layers * growth_rate
             if i != len(block_config) - 1:
                 trans = DenseTransition(num_input_features=num_features, num_output_features=num_features // 2)
-                self.densenet_transition_layer.append(trans)
-                num_features //= 2
+                self.transition_layers.append(trans)
+                num_features = num_features // 2
 
+        # Final batch norm
         self.features.add_module('norm5', BatchNormAct2d(num_features))
         self.num_features = num_features
 
     def forward(self, x):
         x = self.features(x)
-        if self.layer_name == "densenet_input":
-            return x
-        x = self.densenet_layer[self.idx](x)
-        if self.layer_name == "densenet_layer":
-            return x
-        x = self.densenet_transition_layer[self.idx](x)
+        for i, block in enumerate(self.dense_blocks):
+            x = block(x)
+            if self.layer_name == "densenet_layer" and self.idx == i:
+                return x
+            if i < len(self.transition_layers):
+                x = self.transition_layers[i](x)
+                if self.layer_name == "densenet_transition_layer" and self.idx == i:
+                    return x
         return x
         
 class Densenet121(nn.Module):
-    """Constructs a Res2Net-50  model."""
+    def __init__(self, cin=3, cout=64, idx=0, layer_name=""):
+        super(Densenet121, self).__init__()
+        self.densenet = DenseNet(layer_name=layer_name, idx=idx, growth_rate=32, block_config=(6, 12, 24, 16), in_chans=cin)
 
-    def __init__(self,cin = 3,cout = 64,idx = 0,layer_name = ""):
-
-        super(Densenet121 , self).__init__()
-        self.cout = cout
-        self.idx = idx
-        self.layer_name = layer_name
-        self.densenet121  = DenseNet(idx = self.idx,layer_name = self.layer_name,growth_rate=32, block_config=(6, 12, 24, 16))
     def forward(self, x):
-        x = self.densenet121(x)
-        return x
+        return self.densenet(x)
 
 class Densenet169(nn.Module):
-    """Constructs a Res2Net-50  model."""
+    def __init__(self, cin=3, cout=64, idx=0, layer_name=""):
+        super(Densenet169, self).__init__()
+        self.densenet = DenseNet(layer_name=layer_name, idx=idx, growth_rate=32, block_config=(6, 12, 32, 32), in_chans=cin)
 
-    def __init__(self,cin = 3,cout = 64,idx = 0,layer_name = ""):
-
-        super(Densenet169 , self).__init__()
-        self.cout = cout
-        self.idx = idx
-        self.layer_name = layer_name
-        self.densenet169  = DenseNet(idx = self.idx,layer_name = self.layer_name,growth_rate=32, block_config=(6, 12, 32, 32))
     def forward(self, x):
-        x = self.densenet169(x)
-        return x
+        return self.densenet(x)
+
 class Densenet201(nn.Module):
-    """Constructs a Res2Net-50  model."""
+    def __init__(self, cin=3, cout=64, idx=0, layer_name=""):
+        super(Densenet201, self).__init__()
+        self.densenet = DenseNet(layer_name=layer_name, idx=idx, growth_rate=32, block_config=(6, 12, 48, 32), in_chans=cin)
 
-    def __init__(self,cin = 3,cout = 64,idx = 0,layer_name = ""):
-
-        super(Densenet201 , self).__init__()
-        self.cout = cout
-        self.idx = idx
-        self.layer_name = layer_name
-        self.densenet201  = DenseNet(idx = self.idx,layer_name = self.layer_name,growth_rate=32, block_config=(6, 12, 48, 32))
     def forward(self, x):
-        x = self.densenet201(x)
-        return x
-
-#more densenet models
-
-# @register_model
-# def densenetblur121d(pretrained=False, **kwargs):
-#     r"""Densenet-121 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenetblur121d', growth_rate=32, block_config=(6, 12, 24, 16), pretrained=pretrained, stem_type='deep',
-#         aa_layer=BlurPool2d, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet121d(pretrained=False, **kwargs):
-#     r"""Densenet-121 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenet121d', growth_rate=32, block_config=(6, 12, 24, 16), stem_type='deep',
-#         pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet169(pretrained=False, **kwargs):
-#     r"""Densenet-169 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenet169', growth_rate=32, block_config=(6, 12, 32, 32), pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet201(pretrained=False, **kwargs):
-#     r"""Densenet-201 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenet201', growth_rate=32, block_config=(6, 12, 48, 32), pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet161(pretrained=False, **kwargs):
-#     r"""Densenet-161 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenet161', growth_rate=48, block_config=(6, 12, 36, 24), pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet264(pretrained=False, **kwargs):
-#     r"""Densenet-264 model from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'densenet264', growth_rate=48, block_config=(6, 12, 64, 48), pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def densenet264d_iabn(pretrained=False, **kwargs):
-#     r"""Densenet-264 model with deep stem and Inplace-ABN
-#     """
-#     def norm_act_fn(num_features, **kwargs):
-#         return create_norm_act_layer('iabn', num_features, act_layer='leaky_relu', **kwargs)
-#     model = _create_densenet(
-#         'densenet264d_iabn', growth_rate=48, block_config=(6, 12, 64, 48), stem_type='deep',
-#         norm_layer=norm_act_fn, pretrained=pretrained, **kwargs)
-#     return model
-#
-#
-# @register_model
-# def tv_densenet121(pretrained=False, **kwargs):
-#     r"""Densenet-121 model with original Torchvision weights, from
-#     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`
-#     """
-#     model = _create_densenet(
-#         'tv_densenet121', growth_rate=32, block_config=(6, 12, 24, 16), pretrained=pretrained, **kwargs)
-#     return model
-
-
-
-
-
+        return self.densenet(x)
