@@ -1076,13 +1076,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
-            if m in {Densenet121, Densenet169, Densenet201}:
-                required_f = max(f) + 1
-                while len(ch) < required_f:
-                    ch.append(ch[-1])  # Extend with last known channel if out of range
-                args.append([ch[x] for x in f if x < len(ch)])   
-            else : 
-                args.append([ch[x] for x in f])
+            required_indices = [x for x in f if x < len(ch)]
+            if len(required_indices) < len(f):
+                ch.extend([ch[-1]] * (max(f) + 1 - len(ch)))  # Extend with last known channels if needed
+            args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
             if m in {Detect, Segment, Pose, OBB}:
