@@ -12,33 +12,37 @@ scales:  # model compound scaling constants
 
 # DenseNet-based YOLOv8 backbone
 backbone:
-  # [from, repeats, module, args]
-  - [-1, 1, Densenet121, [64, 0, "densenet_input"]]  # Initial layer
-  - [-1, 1, Densenet121, [256, 0, "densenet_layer"]]  # P2 output
-  - [-1, 1, Densenet121, [128, 0, "densenet_transition_layer"]] # P2 to P3 transition
-  - [-1, 1, Densenet121, [512, 1, "densenet_layer"]]  # P3 output
-  - [-1, 1, Densenet121, [256, 1, "densenet_transition_layer"]]  # P3 to P4 transition
-  - [-1, 1, Densenet121, [1024, 2, "densenet_layer"]]  # P4 output
-  - [-1, 1, Densenet121, [512, 2, "densenet_transition_layer"]]  # P4 to P5 transition
-  - [-1, 1, Densenet121, [1024, 3, "densenet_layer"]]  # P5 output
-  - [-1, 1, SPPF, [1024, 5]]  # Spatial Pyramid Pooling
+  # Initial convolution and pooling layer
+  - [-1, 1, Conv, [64, 7, 2]]  # Initial Conv layer (7x7, stride 2)
+  - [-1, 1, MaxPool, [3, 2]]   # MaxPool layer (3x3, stride 2)
 
-# YOLOv8 head with DenseNet
+  # Dense Block 1
+  - [-1, 6, DenseBlock, [64, 32, 4]]  # DenseBlock with 6 layers, growth rate 32
+  - [-1, 1, DenseTransition, [128]]    # Transition layer (pooling + conv)
+
+  # Dense Block 2
+  - [-1, 12, DenseBlock, [128, 32, 4]] # DenseBlock with 12 layers, growth rate 32
+  - [-1, 1, DenseTransition, [256]]    # Transition layer
+
+  # Dense Block 3
+  - [-1, 24, DenseBlock, [256, 32, 4]] # DenseBlock with 24 layers, growth rate 32
+  - [-1, 1, DenseTransition, [512]]    # Transition layer
+
+  # Dense Block 4
+  - [-1, 16, DenseBlock, [512, 32, 4]] # DenseBlock with 16 layers, growth rate 32
+  - [-1, 1, Conv, [1024, 1, 1]]        # Final Conv layer to match output channels
+
 head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
-  - [[-1, 6], 1, Concat, [1]]  # cat backbone P4
-  - [-1, 3, C2f, [512]]  # Head layer 1
-
+  - [[-1, 3], 1, Concat, [1]]
+  - [-1, 1, Conv, [512, 3, 1]]
+  
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
-  - [[-1, 4], 1, Concat, [1]]  # cat backbone P3
-  - [-1, 3, C2f, [256]]  # Head layer 2 (P3/8-small)
-
+  - [[-1, 1], 1, Concat, [1]]
+  - [-1, 1, Conv, [256, 3, 1]]
+  
   - [-1, 1, Conv, [256, 3, 2]]
-  - [[-1, 12], 1, Concat, [1]]  # cat head P4
-  - [-1, 3, C2f, [512]]  # Head layer 3 (P4/16-medium)
+  - [[-1, 3], 1, Concat, [1]]
+  - [-1, 1, Conv, [512, 3, 1]]
 
-  - [-1, 1, Conv, [512, 3, 2]]
-  - [[-1, 9], 1, Concat, [1]]  # cat head P5
-  - [-1, 3, C2f, [1024]]  # Head layer 4 (P5/32-large)
-
-  - [[15, 18, 21], 1, Detect, [nc]]  # Detect(P3, P4, P5)
+  - [[7, 9, 11], 1, Detect, [nc]]  # Detection head
