@@ -14,7 +14,7 @@ scales:  # model compound scaling constants
 backbone:
   # Initial convolution and pooling layer
   - [-1, 1, Conv, [64, 7, 2]]  # Initial Conv layer (7x7, stride 2)
-  - [-1, 1, MaxPool, [3, 2]]   # MaxPool layer (3x3, stride 2)
+  - [-1, 1, nn.MaxPool2d, [3, 2]]   # MaxPool layer (3x3, stride 2)
 
   # Dense Block 1
   - [-1, 6, DenseBlock, [64, 32, 4]]  # DenseBlock with 6 layers, growth rate 32
@@ -35,14 +35,14 @@ backbone:
 head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 3], 1, Concat, [1]]
-  - [-1, 1, Conv, [512, 3, 1]]
+  - [-1, 3, C2f, [512, True]]  # Replace Conv with C2f for consistent YOLOv8 style
   
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 1], 1, Concat, [1]]
-  - [-1, 1, Conv, [256, 3, 1]]
+  - [-1, 3, C2f, [256, True]]
   
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 3], 1, Concat, [1]]
-  - [-1, 1, Conv, [512, 3, 1]]
+  - [-1, 3, C2f, [512, True]]
 
-  - [[7, 9, 11], 1, Detect, [nc]]  # Detection head
+  - [[7, 9, 11], 1, Detect, [nc]]
