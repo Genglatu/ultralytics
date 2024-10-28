@@ -81,7 +81,7 @@ from ultralytics.nn.backbone.ConvNext import ConvNeXt_Stem, ConvNeXt_Block, Conv
 from ultralytics.nn.backbone.MobileNetV3 import Conv_BN_HSwish, MobileNetV3_InvertedResidual
 from ultralytics.nn.backbone.PP_LCNet import DepthSepConv
 from ultralytics.nn.backbone.MobileNext import SGBlock
-from ultralytics.nn.backbone.densenet import Densenet121, Densenet169, Densenet201
+from ultralytics.nn.backbone.densenet import DenseBlock, DenseTransition
 
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1023,9 +1023,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             BasicStage, 
             PatchEmbed_FasterNet, 
             PatchMerging_FasterNet,
-            Densenet121, 
-            Densenet169, 
-            Densenet201,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1076,9 +1073,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
-            required_indices = [x for x in f if x < len(ch)]
-            if len(required_indices) < len(f):
-                ch.extend([ch[-1]] * (max(f) + 1 - len(ch)))  # Extend with last known channels if needed
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
@@ -1184,6 +1178,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if c2 != nc:
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
             args = [c1, c2, *args[1:]]
+        elif m in [DenseBlock, DenseTransition]:
+            c1 = ch[f[0]]
+            c2 = args[0]
+            args = [c1, c2] + args[1:]
+            ch.append(c2)
         else:
             c2 = ch[f]
 
