@@ -71,7 +71,7 @@ class DenseBlock(nn.Module):
 
     def forward(self, x):
         x = self.block(x)
-        print("DenseBlock final output shape:", x.shape)  # Shape check after full block
+        print("DenseBlock output type:", type(x), "DenseBlock output shape:", x.shape)
         return x
 
 class DenseTransition(nn.Sequential):
@@ -83,8 +83,8 @@ class DenseTransition(nn.Sequential):
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
     def forward(self, x):
-        x = self.block(x)
-        print("DenseBlock output shape:", x.shape)  # Add here or in DenseTransition
+        x = super().forward(x)
+        print("DenseTransition output type:", type(x), "DenseTransition output shape:", x.shape)
         return x
 
 class Densenet121(nn.Module):
