@@ -47,18 +47,19 @@ class DenseLayer(nn.Module):
     def __init__(self, in_channels, growth_rate, bn_size):
         super(DenseLayer, self).__init__()
         self.layer = nn.Sequential(
-            BatchNormAct2d(in_channels),
+            nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels, bn_size * growth_rate, kernel_size=1, stride=1, bias=False),
-            BatchNormAct2d(bn_size * growth_rate),
+            nn.BatchNorm2d(bn_size * growth_rate),
             nn.ReLU(inplace=True),
             nn.Conv2d(bn_size * growth_rate, growth_rate, kernel_size=3, stride=1, padding=1, bias=False)
         )
 
     def forward(self, x):
+        if not isinstance(x, torch.Tensor):
+            raise TypeError(f"Expected input to be torch.Tensor, got {type(x)}")
         out = self.layer(x)
-        x = torch.cat([x, out], dim=1)  # Concatenate along channels dimension
-        assert isinstance(x, torch.Tensor), "Expected tensor but got list"
+        x = torch.cat([x, out], dim=1)
         return x
 
 class DenseBlock(nn.Module):
