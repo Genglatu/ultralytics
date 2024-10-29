@@ -57,8 +57,8 @@ class DenseLayer(nn.Module):
 
     def forward(self, x):
         out = self.layer(x)
-        x = torch.cat([x, out], dim=1)  # Concatenate along channels
-        print("DenseLayer output shape:", x.shape)  # Shape check after each layer
+        x = torch.cat([x, out], dim=1)  # Concatenate along channels dimension
+        assert isinstance(x, torch.Tensor), "Expected tensor but got list"
         return x
 
 class DenseBlock(nn.Module):
@@ -71,7 +71,8 @@ class DenseBlock(nn.Module):
 
     def forward(self, x):
         x = self.block(x)
-        print("DenseBlock output type:", type(x), "DenseBlock output shape:", x.shape)
+        print("DenseBlock output type:", type(x))
+        assert isinstance(x, torch.Tensor), "DenseBlock should return tensor, got list"
         return x
 
 class DenseTransition(nn.Sequential):
