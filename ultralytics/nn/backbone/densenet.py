@@ -56,8 +56,8 @@ class DenseLayer(nn.Module):
         )
 
     def forward(self, x):
-        if not isinstance(x, torch.Tensor):
-            raise TypeError(f"Expected input to be torch.Tensor, got {type(x)}")
+        if isinstance(x, list):
+            x = torch.cat(x, dim=1)  # Concatenate list elements along the channel dimension
         out = self.layer(x)
         x = torch.cat([x, out], dim=1)
         return x
