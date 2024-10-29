@@ -56,7 +56,10 @@ class DenseLayer(nn.Module):
         )
 
     def forward(self, x):
-        return torch.cat([x, self.layer(x)], 1)
+        out = self.layer(x)
+        x = torch.cat([x, out], dim=1)  # Concatenate along channels
+        print("DenseLayer output shape:", x.shape)  # Shape check after each layer
+        return x
 
 class DenseBlock(nn.Module):
     def __init__(self, num_layers, in_channels, growth_rate, bn_size):
@@ -67,7 +70,9 @@ class DenseBlock(nn.Module):
         self.block = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.block(x)
+        x = self.block(x)
+        print("DenseBlock final output shape:", x.shape)  # Shape check after full block
+        return x
 
 class DenseTransition(nn.Sequential):
     def __init__(self, in_channels, out_channels):
@@ -76,6 +81,11 @@ class DenseTransition(nn.Sequential):
         self.add_module('relu', nn.ReLU(inplace=True))
         self.add_module('conv', nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, bias=False))
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
+
+    def forward(self, x):
+        x = self.block(x)
+        print("DenseBlock output shape:", x.shape)  # Add here or in DenseTransition
+        return x
 
 class Densenet121(nn.Module):
     def __init__(self):
