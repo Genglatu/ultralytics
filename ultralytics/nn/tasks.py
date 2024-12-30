@@ -62,6 +62,12 @@ from ultralytics.nn.modules import (
     WorldDetect,
     v10Detect,
 )
+
+from ultralytics.nn.backbone.swinTransformer import PatchEmbed,PatchMerging,SwinStage
+from ultralytics.nn.backbone.MobileVit import MV2Block, MobileViTBlock
+from ultralytics.nn.backbone.ConvNext import ConvNeXt_Stem, ConvNeXt_Block, ConvNeXt_Downsample
+from ultralytics.nn.backbone.MobileNetV3 import Conv_BN_HSwish, MobileNetV3_InvertedResidual
+
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import (
@@ -1058,6 +1064,36 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
+            
+        ###########   Improved   ############
+        elif m in [PatchMerging, PatchEmbed, SwinStage]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+        elif m is MV2Block:
+            c1, c2 = ch[f], args[0]
+            args = [c1, c2, *args[1:]]
+        elif m is MobileViTBlock:
+            dim, depth, d_c = args[0], args[1], ch[f]
+            if d_c != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                d_c = make_divisible(min(d_c, max_channels) * width, 8)
+            args = [dim, depth, d_c, *args[2:]]
+        elif m in (ConvNeXt_Stem, ConvNeXt_Block, ConvNeXt_Downsample):
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+            if m is ConvNeXt_Block:
+                args.insert(2, n)  # number of repeats
+                n = 1
+        elif m in [Conv_BN_HSwish, MobileNetV3_InvertedResidual]:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+            args = [c1, c2, *args[1:]]
+        ###########   Improved   ############
+        
         else:
             c2 = ch[f]
 
