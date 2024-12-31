@@ -15,36 +15,38 @@ scales: # model compound scaling constants, i.e. 'model=yolo11n-mobilevits.yaml'
 # YOLO11 backbone
 backbone:
   # [from, repeats, module, args]
-  - [-1, 1, Conv, [16, 3, 2]]                       # 0-P1/2
-  - [-1, 1, MV2Block, [32, 1, 4]]                   # 1
-  - [-1, 1, MV2Block, [64, 2, 4]]                   # 2-p2
-  - [-1, 1, MV2Block, [64, 1, 4]]                   # 3
-  - [-1, 1, MV2Block, [64, 1, 4]]                   # 4
-  - [-1, 1, MV2Block, [96, 2, 4]]                   # 5-P3
-  - [-1, 1, MobileViTBlock, [144, 2, 3, 2, 288, 0]] # out 6
-  - [-1, 1, MV2Block, [128, 2, 4]]                  # 7-P4
-  - [-1, 1, MobileViTBlock, [192, 4, 3 ,2, 384, 0]] # out 8
-  - [-1, 1, MV2Block, [160, 2, 4]]                  # 9-p5
-  - [-1, 1, MobileViTBlock, [240, 3, 3, 1, 480, 0]] # 10
-  - [-1, 1, SPPF, [240, 5]]                         # 11
-  - [-1, 2, C2PSA, [240]]                           # out 12
+  - [-1, 1, Conv, [16, 3, 2]]                           # 0
+  - [-1, 1, MV2Block, [32, 1, 2]]                       # 1 stride,expansion
+  - [-1, 1, MV2Block, [32, 2, 2]]                       # 2
+  - [-1, 1, MV2Block, [64, 1, 2]]                       # 3
+  - [-1, 1, MV2Block, [128, 1, 2]]                      # 4
+  - [-1, 1, MV2Block, [128, 2, 2]]                      # 5
+  # out_channel, kernel_size, patch_size, mlp_dim, depth, dim
+  - [-1, 1, MobileViTBlock, [128, 3, [2,2],192, 2, 96]] # 6
+  - [-1, 1, MV2Block, [256, 1, 2]]                      # 7
+  - [-1, 1, MV2Block, [256, 2, 2]]                      # 8
+  - [-1, 1, MobileViTBlock, [256, 3, [2,2],192, 4, 96]] # 9
+  - [-1, 1, MV2Block, [256, 2, 2]]                      # 10
+  - [-1, 1, MobileViTBlock, [256, 3, [2,2],192, 3, 96]] # 11
+  - [-1, 1, SPPF, [1024, 5]]                            # 12
+  - [-1, 2, C2PSA, [1024]]                              # out 13
 
 # YOLO11 head
 head:
   - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
   - [[-1, 8], 1, Concat, [1]]  # cat backbone P4
-  - [-1, 2, C3k2, [120, False]]   # 15
+  - [-1, 2, C3k2, [512, False]]   # 16
 
   - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
   - [[-1, 6], 1, Concat, [1]]  # cat backbone P3
-  - [-1, 2, C3k2, [60, False]]  # 18 (P3/8-small)
+  - [-1, 2, C3k2, [256, False]]  # 19 (P3/8-small)
 
-  - [-1, 1, Conv, [60, 3, 2]]
-  - [[-1, 15], 1, Concat, [1]]  # cat head P4
-  - [-1, 2, C3k2, [120, False]]  # 21 (P4/16-medium)
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 16], 1, Concat, [1]]  # cat head P4
+  - [-1, 2, C3k2, [512, False]]  # 22 (P4/16-medium)
 
-  - [-1, 1, Conv, [120, 3, 2]]
-  - [[-1, 12], 1, Concat, [1]]  # cat head P5
-  - [-1, 2, C3k2, [240, True]]  # 24 (P5/32-large)
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 13], 1, Concat, [1]]  # cat head P5
+  - [-1, 2, C3k2, [1024, True]]  # 25 (P5/32-large)
 
-  - [[18, 21, 24], 1, Detect, [nc]]  # Detect(P3, P4, P5)
+  - [[19, 22, 25], 1, Detect, [nc]]  # Detect(P3, P4, P5)
